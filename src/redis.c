@@ -259,8 +259,11 @@ struct redisCommand redisCommandTable[] = {
     {"script",scriptCommand,-2,"ras",0,NULL,0,0,0,0,0},
     {"time",timeCommand,1,"rR",0,NULL,0,0,0,0,0},
     {"bitop",bitopCommand,-4,"wm",0,NULL,2,-1,1,0,0},
-    {"bitcount",bitcountCommand,-2,"r",0,NULL,1,1,1,0,0}
+    {"bitcount",bitcountCommand,-2,"r",0,NULL,1,1,1,0,0},
+    {"loadlib",loadlibCommand,2,"r",0,NULL,0,0,0,0,0},
+    {"unloadlib",unloadlibCommand,2,"r",0,NULL,0,0,0,0,0}
 };
+
 
 /*============================ Utility functions ============================ */
 
@@ -3114,6 +3117,68 @@ int main(int argc, char **argv) {
     aeMain(server.el);
     aeDeleteEventLoop(server.el);
     return 0;
+}
+
+/* ========================================================================= */
+
+static dict* libs;
+
+/*=========================================================================== */
+void loadlibCommand(redisClient *c) {
+    void *handle;
+    char *error;
+    int (*redis_lib_init)(redisClient*, dict*);
+    int re;
+
+    if (libs == NULL) {
+        libs = dictCreate(&keyptrDictType, NULL);
+    }
+    else if (dictFind(libs, c->argv[1]->ptr) != NULL) {
+        addReplyError(c, "Aready loaded");
+        return;
+    }
+
+    handle = dlopen(c->argv[1]->ptr, RTLD_LAZY);
+    if (!handle) {
+        addReplyError(c, dlerror());
+        return;
+    }
+    redis_lib_init = dlsym(handle, "redis_lib_init");
+    if ((error = dlerror()) != NULL)  {
+        dlclose(handle);
+        addReplyError(c, error);
+        return;
+    }
+    re = redis_lib_init(c, server.commands);
+    if (re) {
+        dlclose(handle);
+        addReplyError(c, "lib init error");
+        return;
+    }
+    addReply(c,shared.ok);
+    dictAdd(libs, sdsnew(c->argv[1]->ptr), handle);
+}
+void unloadlibCommand(redisClient *c) {
+    void *handle;
+    void (*redis_lib_depose)(redisClient*);
+    if (libs == NULL) {
+        libs = dictCreate(&keyptrDictType, NULL);
+        addReplyError(c, "Not Found");
+        return;
+    } else {
+        handle = dictFetchValue(libs, c->argv[1]->ptr);
+        if (!handle) {
+            addReplyError(c, "Not Found");
+            return;
+        }
+        redis_lib_depose = dlsym(handle, "redis_lib_depose");
+        if (dlerror() == NULL)  {
+            redis_lib_depose(c);
+        }
+        addReply(c,shared.ok);
+        dlclose(handle);
+        dictDelete(libs, c->argv[1]->ptr);
+    }
 }
 
 /* The End */
