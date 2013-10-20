@@ -260,8 +260,8 @@ struct redisCommand redisCommandTable[] = {
     {"time",timeCommand,1,"rR",0,NULL,0,0,0,0,0},
     {"bitop",bitopCommand,-4,"wm",0,NULL,2,-1,1,0,0},
     {"bitcount",bitcountCommand,-2,"r",0,NULL,1,1,1,0,0},
-    {"loadlib",loadlibCommand,2,"r",0,NULL,0,0,0,0,0},
-    {"unloadlib",unloadlibCommand,2,"r",0,NULL,0,0,0,0,0}
+    {"loadlib",loadlibCommand,2,"wmaR",0,NULL,0,0,0,0,0},
+    {"unloadlib",unloadlibCommand,2,"wmaR",0,NULL,0,0,0,0,0}
 };
 
 
@@ -3157,6 +3157,7 @@ void loadlibCommand(redisClient *c) {
     }
     addReply(c,shared.ok);
     dictAdd(libs, sdsnew(c->argv[1]->ptr), handle);
+    server.dirty ++;
 }
 void unloadlibCommand(redisClient *c) {
     void *handle;
@@ -3178,6 +3179,7 @@ void unloadlibCommand(redisClient *c) {
         addReply(c,shared.ok);
         dlclose(handle);
         dictDelete(libs, c->argv[1]->ptr);
+        server.dirty++;
     }
 }
 
